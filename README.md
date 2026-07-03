@@ -1,8 +1,5 @@
-# A Persona-Infused Cross-Task Graph Network for Multimodal Emotion Recognition with Emotion Shift Detection in Conversations
+# Revisiting Multimodal Emotion Recognition in Conversation from the Perspectives of Context and Representation Over-Smoothing
 
-> The official implementation for paper: [*A Persona-Infused Cross-Task Graph Network for Multimodal Emotion Recognition with Emotion Shift Detection in Conversations*](https://dl.acm.org/doi/10.1145/3626772.3657944), SIGIR 2024.
-
-<img src="https://img.shields.io/badge/Venue-SIGIR--24-blue" alt="venue"/> <img src="https://img.shields.io/badge/Status-Accepted-success" alt="status"/> <img src="https://img.shields.io/badge/Issues-Welcome-red">
 
 
 ## Requirements
@@ -21,7 +18,7 @@
 
 ## Training & Evaluation
 
-1. train PCGNet on IEMOCAP for ERC task
+1. train ESDCM on IEMOCAP for ERC task
 ```shell
 python code/run_train_erc.py --dataset IEMOCAP --data_dir ../data/iemocap/IEMOCAP_features.pkl \
   --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 --dropout 0.2 --gamma 0.5 --class_weight --reason_flag \
@@ -31,7 +28,7 @@ python code/run_train_erc.py --dataset IEMOCAP --data_dir ../data/iemocap/IEMOCA
   --persona_transform --interactive_windows 1 --epochs 140 --seed 6500
 ```
 
-2. train PCGNet on MELD for ERC task
+2. train ESDCM on MELD for ERC task
 ```shell
 python code/run_train_erc.py --dataset MELD --data_dir ./data/meld/MELD_features_raw1.pkl \
   --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 \
@@ -43,7 +40,7 @@ python code/run_train_erc.py --dataset MELD --data_dir ./data/meld/MELD_features
   --erc_windows 1 --shift_windows 1 --interactive_windows 1  --epochs 30 --seed 11407
 ```
 
-3. evaluation PCGNet on IEMOCAP for ERC task
+3. evaluation ESDCM on IEMOCAP for ERC task
 ```shell
 python code/inference.py --dataset IEMOCAP --data_dir data/iemocap/IEMOCAP_features.pkl \
   --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 --dropout 0.2 --gamma 0.5 --class_weight --reason_flag \
@@ -53,7 +50,7 @@ python code/inference.py --dataset IEMOCAP --data_dir data/iemocap/IEMOCAP_featu
   --persona_transform --interactive_windows 1 --seed 6500 --ckpt checkpoints/IEMOCAP_ckpt.pkl
 ```
 
-4. evaluation PCGNet on MELD for ERC task
+4. evaluation ESDCM on MELD for ERC task
 ```shell
 python code/inference.py --dataset MELD --data_dir ./data/meld/MELD_features_raw1.pkl \
   --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 \
@@ -65,22 +62,3 @@ python code/inference.py --dataset MELD --data_dir ./data/meld/MELD_features_raw
   --erc_windows 1 --shift_windows 1 --interactive_windows 1 --seed 11407 --ckpt checkpoints/MELD_ckpt.pkl
 ```
 
-
-## Citation
-If you find our work useful for your research, please kindly cite our paper as follows:
-```
-@inproceedings{tu2024persona,
-title = {A Persona-Infused Cross-Task Graph Network for Multimodal Emotion Recognition with Emotion Shift Detection in Conversations},
-author = {Tu, Geng and Xiong, Feng and Liang, Bin and Xu, Ruifeng},
-booktitle={Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval},
-pages = {2266–2270},
-year = {2024}
-}
-```
-
-## Acknowledgements
-Special thanks to the following authors for their contributions through open-source implementations.
-
-* [Emotion Recognition in Conversations](https://github.com/declare-lab/conv-emotion)
-* [An Open-source Benchmark of Deep Learning Models for Audio-visual Apparent and Self-reported Personality Recognition](https://github.com/liaorongfan/DeepPersonality.git)
-* [Multivariate, Multi-frequency and Multimodal: Rethinking Graph Neural Networks for Emotion Recognition in Conversation](https://github.com/feiyuchen7/M3NET)
