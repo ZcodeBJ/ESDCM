@@ -1,0 +1,352 @@
+import pandas as pd
+import pickle
+
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
+import re
+import pandas as pd
+import copy
+import numpy as np
+import csv
+
+class IEMOCAPDataset(Dataset):
+    def __init__(self, path=None, train=True, use_multiemo=False):
+        self.videoIDs, self.videoSpeakers, self.videoLabels, self.videoText ,\
+        self.videoAudio, self.videoVisual, self.videoSentence, self.trainVid,\
+        self.testVid = pickle.load(open(path, 'rb'), encoding='latin1')
+        self.keys = [x for x in (self.trainVid if train else self.testVid)]
+
+        _, _, self.roberta1, self.roberta2, self.roberta3, self.roberta4,\
+        _, _, _, _ = pickle.load(open('../data/iemocap/iemocap_features_roberta.pkl', 'rb'), encoding='latin1')
+        
+        ############################
+        # prepare persona data
+        self.persona = pickle.load(open("../data/personaERC/IEMOCAP_persona.pkl", 'rb'), encoding='latin1')
+        ############################
+
+        ## construct speaker infomation
+        # 存储每个视频ID对应的说话者信息
+        self.speakers = {}
+        # 一个正则表达式，用于匹配视频ID字符串中的会话编号（SesXX）和说话者编号
+        # r'(Ses\d{2})'：匹配以 Ses 开头，后跟两个数字的会话信息（如 Ses01、Ses02）
+        # ([MF]\d{3})：匹配说话者的性别和编号，M 或 F 开头，后跟三位数字（如 M001 或 F002）
+        self.pattern = re.compile(r'(Ses\d{2}).*?([MF]\d{3})')
+        print("len(self.videoIDs.keys())",len(self.videoIDs.keys()))
+        for vid in self.videoIDs.keys():
+            # 初始化当前视频ID对应的说话者信息列表
+            self.speakers[vid] = []
+            for item in self.videoIDs[vid]:
+                # 通过正则表达式提取视频ID中的会话编号和性别。如果匹配成功，正则表达式会返回一个 Match 对象，包含会话编号和说话者编号
+                matches = self.pattern.search(item)
+                if matches:
+                    # 将匹配到的会话和性别信息存储到 temp 元组中
+                    temp = matches.groups()
+                    # 提取会话编号部分
+                    session = temp[0].replace("Ses", "")
+                    # 偶数为male, 奇数为female
+                    # 通过检查第二部分的说话者ID是否包含 M（表示男性），将男性编码为 0，女性编码为 1
+                    gender = 0 if 'M' in temp[1] else 1
+
+                    self.speakers[vid].append((int(session)-1)*2 + gender)
+
+
+        if use_multiemo:
+            self.videoText = pickle.load(open('data/MultiEMO/IEMOCAP/TextFeatures.pkl', 'rb'))
+            self.videoAudio = pickle.load(open('data/MultiEMO/IEMOCAP/AudioFeatures.pkl', 'rb'))
+            self.videoVisual = pickle.load(open('data/MultiEMO/IEMOCAP/VisualFeatures.pkl', 'rb'))
+
+            self.roberta1 = self.videoText
+            self.roberta2 = self.videoText
+            self.roberta3 = self.videoText
+            self.roberta4 = self.videoText
+
+
+
+
+    def __getitem__(self, index):
+        vid = self.keys[index]
+        return torch.FloatTensor(self.roberta1[vid]),\
+            torch.FloatTensor(self.roberta2[vid]),\
+            torch.FloatTensor(self.roberta3[vid]),\
+            torch.FloatTensor(self.roberta4[vid]),\
+            torch.FloatTensor(self.videoVisual[vid]),\
+            torch.FloatTensor(self.videoAudio[vid]),\
+            torch.FloatTensor([[1,0] if x=='M' else [0,1] for x in self.videoSpeakers[vid]]),\
+            torch.FloatTensor([1]*len(self.videoLabels[vid])),\
+            torch.LongTensor(self.videoLabels[vid]),\
+            torch.FloatTensor(self.persona[vid]),\
+            self.speakers[vid],\
+            vid
+
+    def __len__(self):
+        return len(self.keys)
+
+    def collate_fn(self, data):
+        dat = pd.DataFrame(data)  
+        return [pad_sequence(dat[i]) if i<8 else pad_sequence(dat[i], True) if i<10 else dat[i].tolist() for i in dat]
+
+
+class MELDDataset(Dataset):
+
+    def __init__(self, path=None, train=True, shift=False, use_multiemo=False):
+        self.videoIDs, self.videoSpeakers, self.videoLabels, self.videoText,\
+        self.videoAudio, self.videoVisual, self.videoSentence, self.trainVid,\
+        self.testVid,self.aaa = pickle.load(open(path, 'rb'),encoding='latin1')
+        self.keys = [x for x in (self.trainVid if train else self.testVid)]
+        self.shift = shift
+        self.trainOrigin = pd.read_csv("../data/meld/train_sent_emo.csv").to_dict(orient='index')
+        self.testOrigin = pd.read_csv("../data/meld/test_sent_emo.csv").to_dict(orient='index')
+        self.devOrigin = pd.read_csv("../data/meld/dev_sent_emo.csv").to_dict(orient='index')
+        self.originData = {}
+
+        ############################
+        # prepare persona data
+        self.persona = pickle.load(open("../data/personaERC/MELD_persona.pkl", 'rb'), encoding='latin1')
+        ############################
+
+        # to get speaker info 
+        for _, value in self.trainOrigin.items():
+            if value['Dialogue_ID'] not in self.originData.keys():
+                self.originData[value['Dialogue_ID']] = []
+            self.originData[value['Dialogue_ID']].append(value)
+
+        for _, value in self.devOrigin.items():
+            value['Dialogue_ID'] = value['Dialogue_ID'] + 1039
+            if (value['Dialogue_ID']) not in self.originData.keys():
+                self.originData[(value['Dialogue_ID'])] = []
+            self.originData[(value['Dialogue_ID'])].append(value)
+        for _, value in self.testOrigin.items():
+            value['Dialogue_ID'] = value['Dialogue_ID'] + 1153
+            if (value['Dialogue_ID']) not in self.originData.keys():
+                self.originData[(value['Dialogue_ID'])] = []
+            self.originData[(value['Dialogue_ID'])].append(value)
+            
+        self.speakers = []
+        # 存储所有的speaker的信息，具体到每一个人
+        self.speaker_list = {}
+        for index in self.originData.keys():
+            value = self.originData[index]
+            cur_speaker = []
+            for utterance in value:
+                cur_speaker.append(utterance['Speaker'])
+            self.speaker_list[index] = cur_speaker
+            assert len(cur_speaker) == len(self.videoIDs[index])
+            self.speakers.extend(cur_speaker)
+        self.speakersIndex2Speaker = {i: speaker for i, speaker in enumerate(list(set(self.speakers)))}
+        self.speakersSpeaker2Index = {v: k for k, v in self.speakersIndex2Speaker.items()}
+        for key in self.keys:
+            value = self.speaker_list[key]
+            value_Index = []
+            for item in value:
+                value_Index.append(self.speakersSpeaker2Index[item])
+            self.speaker_list[key] = value_Index
+        self.len = len(self.keys)
+        _, _, _, self.roberta1, self.roberta2, self.roberta3, self.roberta4, \
+            _, _, _, _ \
+            = pickle.load(open("../data/meld/meld_features_roberta.pkl", 'rb'), encoding='latin1')
+
+        self.get_jsp_embedding()
+        self.get_sp_jsp_list()
+
+
+        if use_multiemo:
+            self.videoText = pickle.load(open('../data/MultiEMO/MELD/TextFeatures.pkl', 'rb'))
+            self.videoAudio = pickle.load(open('../data/MultiEMO/MELD/AudioFeatures.pkl', 'rb'))
+            self.videoVisual = pickle.load(open('../data/MultiEMO/MELD/VisualFeatures.pkl', 'rb'))
+            self.roberta1 = self.videoText
+            self.roberta2 = self.videoText
+            self.roberta3 = self.videoText
+            self.roberta4 = self.videoText
+
+
+    def get_jsp_embedding(self):
+        job_embedding = np.loadtxt(open('../data/meld/job_embedding.txt'), delimiter=" ", skiprows=0, dtype=np.float32)
+        sex_embedding = np.loadtxt(open('../data/meld/sex_embedding.txt'), delimiter=" ", skiprows=0, dtype=np.float32)
+        personality_embedding = np.loadtxt(open('../data/meld/personality_embedding.txt'), delimiter=" ", skiprows=0, dtype=np.float32)
+        self.job_embedding = torch.from_numpy(job_embedding)
+        self.sex_embedding = torch.from_numpy(sex_embedding)
+        self.personality_embedding = torch.from_numpy(personality_embedding)
+        
+
+    def get_jsp_list(self): # job, sex, personality
+        job = []
+        sex = []
+        personality = []
+        with open('../data/meld/speaker_information.csv', 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.reader(f)
+            fieldnames = next(reader)
+            csv_reader = csv.DictReader(f, fieldnames=fieldnames)
+            for row in csv_reader:
+                if row['job'] not in job:
+                    job.append(row['job'])
+                if row['sex'] not in sex:
+                    sex.append(row['sex'])
+                if row['personality'] not in personality:
+                    personality.append(row['personality'])
+        return job, sex, personality
+    
+    def get_sp_jsp_list(self):
+        job, sex, personality = self.get_jsp_list()
+        sp_jsp_list = {}
+        with open('../data/meld/speaker_information.csv', 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.reader(f)
+            fieldnames = next(reader)
+            csv_reader = csv.DictReader(f, fieldnames=fieldnames)
+            for row in csv_reader:
+                sp_jsp_list[self.speakersSpeaker2Index[row['name']]] = [job.index(row['job']), sex.index(row['sex']), personality.index(row['personality'])]
+                # sp_jsp_list.append([job.index(row['job']), sex.index(row['sex']), personality.index(row['personality'])])
+        self.sp_jsp_list = sp_jsp_list
+
+
+    def __getitem__(self, index):
+        vid = self.keys[index]
+        return torch.FloatTensor(self.roberta1[vid]),\
+            torch.FloatTensor(self.roberta2[vid]),\
+            torch.FloatTensor(self.roberta3[vid]),\
+            torch.FloatTensor(self.roberta4[vid]),\
+            torch.FloatTensor(self.videoVisual[vid]),\
+            torch.FloatTensor(self.videoAudio[vid]),\
+            torch.FloatTensor(self.videoSpeakers[vid]),\
+            torch.FloatTensor([1]*len(self.videoLabels[vid])),\
+            torch.LongTensor(self.videoLabels[vid]),\
+            torch.FloatTensor(self.persona[vid]), \
+            self.speaker_list[vid],\
+            (torch.stack([self.job_embedding[self.sp_jsp_list[speaker][0]] for speaker in self.speaker_list[vid]]), torch.stack([self.job_embedding[self.sp_jsp_list[speaker][1]] for speaker in self.speaker_list[vid]]), torch.stack([self.job_embedding[self.sp_jsp_list[speaker][2]] for speaker in self.speaker_list[vid]]) ),\
+            vid
+
+    def __len__(self):
+        return self.len
+
+    def return_labels(self):
+        return_label = []
+        for key in self.keys:
+            return_label+=self.videoLabels[key]
+        return return_label
+
+    def collate_fn(self, data):
+        dat = pd.DataFrame(data)
+        return [pad_sequence(dat[i]) if i<8 else pad_sequence(dat[i], True) if i<10 else dat[i].tolist() for i in dat]
+
+class M3EDDataset(Dataset):
+    def __init__(self, path=None, train=True, use_multiemo=False):
+        # 加载pkl文件
+        # print("path=",path)
+        loaded_data  = pickle.load(open('/home/wwl/MY/PCGNetz copy/data/M3ED_features/m3ed_features.pkl', 'rb'), encoding='latin1')
+        # print(len(data_list))
+        if isinstance(loaded_data, tuple) and len(loaded_data) == 2: # 如果 loaded_data 是长度为 2 的元组，则取第一个元素
+            data_list = loaded_data[0]  # 解包嵌套结构
+        else:
+            data_list = loaded_data  # 否则直接使用 loaded_data
+        assert len(data_list) >= 10, f"数据字段不足10个，实际长度: {len(data_list)}"
+        # print('data_list的长度为=',len(data_list))
+
+        # 解析数据集结构
+        self.videoIDs = data_list[0]     # 完整语句ID
+        self.videoSpeakers = data_list[1]     # 说话人信息，原生的：['A', 'B', 'B', 'A', ...]
+        self.videoLabels = data_list[2]        # 情感标签
+        self.videoText = data_list[3]          # 文本特征 (Roberta)
+        self.videoAudio = data_list[4]         # 音频特征 (Wav2Vec2.0)
+        self.videoVisual = data_list[5]        # 视觉特征 (DenseNet)
+        self.videoSentence = data_list[6]      # 原始文本语句
+        self.trainVid = data_list[7]           # 训练集对话ID列表
+        self.validVid = data_list[8]           # 验证集对话ID列表
+        self.testVid = data_list[9]            # 测试集对话ID列表
+
+        self.keys = [x for x in (self.trainVid if train else self.testVid)]
+        self.len = len(self.keys)
+        ############################
+        # prepare persona data
+        # self.persona = pickle.load(open("../data/personaERC/IEMOCAP_persona.pkl", 'rb'), encoding='latin1')
+        ############################
+
+        ## construct speaker infomation
+        # 存储每个视频ID对应的说话者信息
+        self.speakers = {}
+        # 一个正则表达式，用于匹配视频ID字符串中的会话编号（SesXX）和说话者编号
+        # r'(Ses\d{2})'：匹配以 Ses 开头，后跟两个数字的会话信息（如 Ses01、Ses02）
+        # ([MF]\d{3})：匹配说话者的性别和编号，M 或 F 开头，后跟三位数字（如 M001 或 F002）
+        for vid in self.videoIDs.keys():
+            self.speakers[vid] = []
+            for item in self.videoIDs[vid]:
+                # 新正则：匹配 "A_fendou_1 .3" 中的 "fendou" 和性别标记（A/B 或其他）
+                matches = re.search(r"^([A-Z])_(\w+)_(\d+)", item.strip())  # 移除可能的空格
+                if matches:
+                    gender_flag = matches.group(1)  # 提取首字母（如 'A'）
+                    speaker_id = matches.group(2)   # 提取中间部分（如 'fendou'）
+                    session_num = matches.group(3)  # 提取数字（如 '1'）
+                    
+                    # 性别编码规则（根据你的需求自定义，例如 A=男性，B=女性）
+                    gender = 0 if gender_flag == 'A' else 1
+                    
+                    # 生成唯一说话者标识（保持原逻辑：会话编号*2 + 性别偏移）
+                    self.speakers[vid].append((int(session_num)-1)*2 + gender)
+
+        if use_multiemo:
+            self.videoText = pickle.load(open('data/MultiEMO/IEMOCAP/TextFeatures.pkl', 'rb'))
+            self.videoAudio = pickle.load(open('data/MultiEMO/IEMOCAP/AudioFeatures.pkl', 'rb'))
+            self.videoVisual = pickle.load(open('data/MultiEMO/IEMOCAP/VisualFeatures.pkl', 'rb'))
+
+            self.roberta1 = self.videoText
+            self.roberta2 = self.videoText
+            self.roberta3 = self.videoText
+            self.roberta4 = self.videoText
+
+
+
+
+    # videoSpeakers[vid] 被转换为 one-hot 编码: 'M' → [1, 0], 'F' → [0, 1]
+    # speakers[vid]: 每个话语的说话者 ID, 从 videoIDs 解析并计算, 计算后的会话+性别编码（整数）
+    def __getitem__(self, index):
+        vid = self.keys[index]
+        return torch.FloatTensor(self.videoText[vid]),\
+            torch.FloatTensor(self.videoText[vid]),\
+            torch.FloatTensor(self.videoText[vid]),\
+            torch.FloatTensor(self.videoText[vid]),\
+            torch.FloatTensor(self.videoVisual[vid]),\
+            torch.FloatTensor(self.videoAudio[vid]),\
+            torch.FloatTensor([[1,0] if x=='A' else [0,1] for x in self.videoSpeakers[vid]]),\
+            torch.FloatTensor([1]*len(self.videoLabels[vid])),\
+            torch.LongTensor(self.videoLabels[vid]),\
+            self.speakers[vid],\
+            vid
+
+    def __len__(self):
+        return len(self.keys)
+
+    def collate_fn(self, data):
+        dat = pd.DataFrame(data)  
+        return [pad_sequence(dat[i]) if i<8 else pad_sequence(dat[i], True) if i<9 else dat[i].tolist() for i in dat]
+
+class DailyDialogueDataset(Dataset):
+
+    def __init__(self, split, path):
+        
+        self.Speakers, self.Features, \
+        self.ActLabels, self.EmotionLabels, self.trainId, self.testId, self.validId = pickle.load(open(path, 'rb'))
+        
+        if split == 'train':
+            self.keys = [x for x in self.trainId]
+        elif split == 'test':
+            self.keys = [x for x in self.testId]
+        elif split == 'valid':
+            self.keys = [x for x in self.validId]
+
+        self.len = len(self.keys)
+
+
+    def __getitem__(self, index):
+        conv = self.keys[index]
+        
+        return  torch.FloatTensor(self.Features[conv]), \
+                torch.FloatTensor([[1,0] if x=='0' else [0,1] for x in self.Speakers[conv]]),\
+                torch.FloatTensor([1]*len(self.EmotionLabels[conv])), \
+                torch.LongTensor(self.EmotionLabels[conv]), \
+                conv
+
+    def __len__(self):
+        return self.len
+    
+    def collate_fn(self, data):
+        dat = pd.DataFrame(data)
+        return [pad_sequence(dat[i]) if i<2 else pad_sequence(dat[i], True) if i<4 else dat[i].tolist() for i in dat]
