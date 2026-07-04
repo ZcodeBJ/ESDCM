@@ -51,20 +51,20 @@ def shiftContrastLearning(shift_features, shift_labels, sample_num=50, dataset='
         pair1_front, pair1_back = decodeShiftLabel(int(shift_labels_sampled[index[0]]), dataset=dataset)
         pair2_front, pair2_back = decodeShiftLabel(int(shift_labels_sampled[index[1]]), dataset=dataset)
 
-        ## 标签相反
+     
         if pair1_front == pair2_back and pair1_back == pair2_front:
             shift_features_pair_label.append(4)
         else:
-            ## 标签相同
+         
             if pair1_front == pair2_front and pair1_back == pair2_back:
                 shift_features_pair_label.append(0)
-            ## 头相同
+         
             elif pair1_front == pair2_front and pair1_back != pair2_back:
                 shift_features_pair_label.append(1)
-            ## 尾相同
+         
             elif pair1_front != pair2_front and pair1_back == pair2_back:
                 shift_features_pair_label.append(2)
-            ## 不相同
+    
             elif pair1_front != pair2_front and pair1_back != pair2_back:
                 shift_features_pair_label.append(3)
     return torch.stack(shift_features_pair), torch.tensor(shift_features_pair_label).to(shift_features.device)
