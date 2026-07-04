@@ -25,7 +25,7 @@ python code/run_train_erc.py --dataset IEMOCAP --data_dir ../data/iemocap/IEMOCA
   --mtl --use_clone --hidden_l 400 --hidden_a 400 --hidden_v 400 --persona_l_heads 8 --persona_a_heads 8 --persona_v_heads 8 \
   --persona_l_layer 1 --persona_a_layer 1 --persona_v_layer 1 --interactive_layer 1 --interactive_heads 4 --dropout_forward 0.3 \
   --dropout_persona_lstm_modeling 0.2 --dropout_interactive 0.2 --dropout_persona 0.2 --erc_windows 1 --shift_windows 1 \
-  --persona_transform --interactive_windows 1 --epochs 140 --seed 6500
+  --persona_transform --interactive_windows 1 --epochs 140 --seed 6500 --weight 3
 ```
 
 2. train ESDCM on MELD for ERC task
@@ -37,28 +37,7 @@ python code/run_train_erc.py --dataset MELD --data_dir ./data/meld/MELD_features
   --persona_l_layer 1 --persona_a_layer 1 --persona_v_layer 1 \
   --interactive_layer 1 --interactive_heads 4 \
   --dropout_forward 0 --dropout_persona_lstm_modeling 0.2 --dropout_interactive 0.2 --dropout_persona 0.2 \
-  --erc_windows 1 --shift_windows 1 --interactive_windows 1  --epochs 30 --seed 11407
+  --erc_windows 1 --shift_windows 1 --interactive_windows 1  --epochs 30 --seed 11407 --weight 5
 ```
 
-3. evaluation ESDCM on IEMOCAP for ERC task
-```shell
-python code/inference.py --dataset IEMOCAP --data_dir data/iemocap/IEMOCAP_features.pkl \
-  --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 --dropout 0.2 --gamma 0.5 --class_weight --reason_flag \
-  --mtl --use_clone --hidden_l 400 --hidden_a 400 --hidden_v 400 --persona_l_heads 8 --persona_a_heads 8 --persona_v_heads 8 \
-  --persona_l_layer 1 --persona_a_layer 1 --persona_v_layer 1 --interactive_layer 1 --interactive_heads 4 --dropout_forward 0.3 \
-  --dropout_persona_lstm_modeling 0.2 --dropout_interactive 0.2 --dropout_persona 0.2 --erc_windows 1 --shift_windows 1 \
-  --persona_transform --interactive_windows 1 --seed 6500 --ckpt checkpoints/IEMOCAP_ckpt.pkl
-```
-
-4. evaluation ESDCM on MELD for ERC task
-```shell
-python code/inference.py --dataset MELD --data_dir ./data/meld/MELD_features_raw1.pkl \
-  --valid_rate 0.0 --modals avl --lr 0.0001 --batch-size 32 --l2 0.0001 \
-  --mtl --use_clone --hidden_l 200 --hidden_a 200 --hidden_v 200 --persona_transform\
-  --persona_l_heads 4 --persona_a_heads 4 --persona_v_heads 4 \
-  --persona_l_layer 1 --persona_a_layer 1 --persona_v_layer 1 \
-  --interactive_layer 1 --interactive_heads 4 \
-  --dropout_forward 0 --dropout_persona_lstm_modeling 0.2 --dropout_interactive 0.2 --dropout_persona 0.2 \
-  --erc_windows 1 --shift_windows 1 --interactive_windows 1 --seed 11407 --ckpt checkpoints/MELD_ckpt.pkl
-```
 
