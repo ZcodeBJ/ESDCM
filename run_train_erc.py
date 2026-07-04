@@ -40,46 +40,33 @@ def decodeShiftLabel(shift_label, dataset):
 
 
 def shiftContrastLearningShiftTask(shift_features, shift_labels, sample_num=50, dataset='IEMOCAP'):
-    # 确定采样数量
     shift_nums = shift_features.shape[0]
     sample_num = sample_num if shift_nums > sample_num else shift_nums
-    # 随机采样
     sample_index = torch.tensor(random.sample(list(range(shift_nums)), sample_num)).detach()
     sample_index = sample_index.to(shift_features.device)
-    # 获取采样后的特征和标签
     shift_features_sampled = shift_features[sample_index]
     shift_labels_sampled = shift_labels[sample_index]
 
     ### TODO : improve sample stragy
-    # 生成所有可能的样本对索引
     shift_features_pair_index = list(itertools.permutations(list(range(sample_num)), 2))
 
     shift_features_pair = []
     shift_features_pair_label = []
-    # 构建样本对
     for index in shift_features_pair_index:
         index = list(index)
-        # 使用采样后的特征 shift_features_sampled 构造样本对的特征。每对特征由两个样本组成，通过 view(-1) 将其展平成一维向量（连接两个样本的特征）
         shift_features_pair.append(shift_features_sampled[index,:].view(-1))
-        # 解码标签
         pair1_front, pair1_back = decodeShiftLabel(int(shift_labels_sampled[index[0]]), dataset=dataset)
         pair2_front, pair2_back = decodeShiftLabel(int(shift_labels_sampled[index[1]]), dataset=dataset)
         
-        ## 标签相同
         if pair1_front == pair2_front and pair1_back == pair2_back:
             shift_features_pair_label.append(0)
-            ## 头相同
         elif pair1_front == pair2_front and pair1_back != pair2_back:
             shift_features_pair_label.append(1)
-            ## 尾相同
         elif pair1_front != pair2_front and pair1_back == pair2_back:
             shift_features_pair_label.append(2)
-            ## 不相同
         elif pair1_front != pair2_front and pair1_back != pair2_back:
             shift_features_pair_label.append(3)
-        # 基于标签相似性生成标签对
-        ## 标签相反  
-          
+
     return torch.stack(shift_features_pair), torch.tensor(shift_features_pair_label).to(shift_features.device)
 
 
@@ -112,7 +99,6 @@ def get_hard_negative_weights(emotion_features, hard_negatives, weight=1):
     N = len(hard_negatives)
     value = 1
     hard_negative_weights = torch.full((N, N), value)
-    # 填充权重矩阵
     for item in hard_negatives:
         sentence_idx = item['sentence_index']
         for neg_idx in item['hard_negative_indices']:
@@ -224,38 +210,29 @@ def metricsShiftEmotion(labels, preds, speakers, dataset):
 
 
 def constructShiftLabel(qmask, lengths, label, class_num):
-    # 保存每个对话中连续句子的组合标签
+
     person_shift_label = []
     qmask = torch.cat([qmask[:lengths[i], i ,:] for i in range(len(lengths))], dim=0)
     uttr_count = 0
     for dia_len in lengths:
-        # print('qmask的形状是=',qmask.shape)
-        # 提取说话者索引
+
         dia_speaker = sorted(set(torch.nonzero(qmask[uttr_count: uttr_count + dia_len])[:, 1].tolist()))
         for speaker in dia_speaker:
-            # 对每个说话者，找到当前对话中属于该说话者的句子索引
             speaker_index = torch.nonzero(qmask[uttr_count: uttr_count + dia_len])[:, 1] == speaker
-            # 标签张量 label 中提取出当前说话者的句子标签
             current_speaker_label = label[uttr_count: uttr_count + dia_len][speaker_index.bool()]
-            # 构建连续句子的标签组合
             if current_speaker_label.shape[0] > 1:
-                # 遍历连续的标签对，将当前句子的标签和下一个句子的标签组合成一个新的标签
                 for i in range(current_speaker_label.shape[0] - 1):
                     person_shift_label.append(current_speaker_label[i] * class_num + current_speaker_label[i + 1])
         uttr_count = uttr_count + dia_len
 
-    # 不区分说话者的情绪标签转移
     context_shift_label = []
     uttr_count = 0
     for dia_len in lengths:
-        # 获取当前对话的所有句子标签（上下文标签）
         current_label = label[uttr_count: uttr_count + dia_len]
-        # 构造上下文情绪转移：拼接相邻句子的特征
 
         if current_label.shape[0] > 1:
             for i in range(current_label.shape[0] - 1):
                 context_shift_label.append(current_label[i] * class_num + current_label[i + 1])
-        # 更新 `uttr_count`，指向下一个对话的起始位置
         uttr_count = uttr_count + dia_len
 
     return torch.tensor(person_shift_label).to(qmask.device), torch.tensor(context_shift_label).to(qmask.device)
@@ -364,16 +341,12 @@ def get_M3ED_loaders(data_path=None, batch_size=32, valid_rate=0.1, num_workers=
 
 def getLoss(loss_erc, person_loss_shift, context_loss_shift, loss_shift_cl, loss_emotion_cl1,loss_emotion_cl2, device, train_flag, optimizer, features_shift, features_erc, scheduler, wo_pareto):
 
-    #6 18年帕累托
     losses = [loss_erc, person_loss_shift, context_loss_shift, loss_shift_cl,loss_emotion_cl1, loss_emotion_cl2]
     tasks = ['erc', 'pes', 'ces', 'escl','erccl1','erccl2']
-    # 筛选出 loss ≠ 0 的 task 和 loss
     filtered_tasks_losses = [(task, loss) for task, loss in zip(tasks, losses) if float(loss) != 0]
-    # 分别取出 task 和 loss
     filtered_tasks, filtered_losses = zip(*filtered_tasks_losses) if filtered_tasks_losses else ([], [])
 
     if train_flag == True and wo_pareto == False:
-        # 计算总的损失,model 是模型
         total_loss = Pareto(optimizer, filtered_losses, device, features_shift, features_erc, filtered_tasks)
     elif train_flag == True and wo_pareto == True:
         optimizer.zero_grad()
@@ -402,7 +375,6 @@ def build_anchor_contrast_mask(features, modal_dim=200):
     anchor_feat = text_feat                          # [bsz, 200]
     contrast_feat = torch.cat([audio_feat, video_feat], dim=0)  # [2*bsz, 200]
 
-    # 构建 mask: anchor[i] 与 contrast[i] 和 contrast[i+bsz] 为正样本
     anchor_ids = torch.arange(bsz).unsqueeze(1)
     contrast_ids = torch.cat([torch.arange(bsz), torch.arange(bsz)]).unsqueeze(0)
     mask = torch.eq(anchor_ids, contrast_ids).float()  # [bsz, 2*bsz]
@@ -433,10 +405,10 @@ def train_or_eval_graph_model(model, loss_f, dataloader, epoch=0, wo_pareto=Fals
             textf1, textf2, textf3, textf4, visuf, acouf, qmask, umask, label, persona = [d.cuda() for d in data[:-2]] if cuda_flag else data[:-2]
             speaker = data[-2]
         elif args.dataset == 'M3ED':
-            # print("Data structure:", [type(d) for d in data])  # 检查每个元素的类型
-            # print("Data length:", len(data))  # 检查长度是否符合预期（应该是 11，因为 data[:-1] 取前 10 个）
+            # print("Data structure:", [type(d) for d in data])  
+            # print("Data length:", len(data))  
             textf1, textf2, textf3, textf4, visuf, acouf, qmask, umask, label = [d.cuda() for d in data[:-2]] if cuda_flag else data[:-2]   # 遍历除了最后两个元素之外的所有元素
-            speaker = data[-2]  # 取出 倒数第2个元素
+            speaker = data[-2]  
         elif args.dataset == 'MELD':
             textf1, textf2, textf3, textf4, visuf, acouf, qmask, umask, label, persona = [d.cuda() for d in data[:-3]] if cuda_flag else data[:-3]
             speaker = data[-3]
@@ -447,13 +419,10 @@ def train_or_eval_graph_model(model, loss_f, dataloader, epoch=0, wo_pareto=Fals
             persona_info = torch.cat([persona_job, persona_sex, persona_personality, torch.mean(torch.cat([persona_job.unsqueeze(0), persona_sex.unsqueeze(0), persona_personality.unsqueeze(0)], dim=0), dim=0)], dim=-1).to(textf1.device)
             
         speaker_all.extend(speaker)
-        # 每段对话中有效句子的数量
         lengths = [int(torch.sum(umask[:,i])) for i in range(umask.shape[1])]
-        # 将 label 中每段对话的有效标签提取出来，并通过 torch.cat 将所有有效标签拼接成一个张量
         label = torch.cat([label[j][:lengths[j]] for j in range(len(label))])
-        # 将相邻的两个句子标签组合成一个新标签，并存储在 shift_label 中
         # print(f"qmask shape: {qmask.shape}, lengths: {lengths}")
-        # qmask = qmask.transpose(0, 1)  # 现在形状是 [32, 44, 2]
+        # qmask = qmask.transpose(0, 1)  
         person_label_shift, context_label_shift = constructShiftLabel(qmask, lengths, label, 6 if args.dataset=='IEMOCAP' else 7)
 
         if args.dataset == 'M3ED':
@@ -588,14 +557,11 @@ def get_free_gpu():
     使用 nvidia-smi 获取 GPU 显存占用信息，返回空闲显存最多的 GPU 索引
     """
     try:
-        # 调用 nvidia-smi 命令并获取输出
         result = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
             encoding="utf-8"
         )
-        # 解析输出，获取每张 GPU 的空闲显存
         free_memory = [int(x) for x in result.strip().split("\n")]
-        # 找到空闲显存最大的 GPU 的索引
         best_gpu = free_memory.index(max(free_memory))
         print(f"Available GPUs free memory: {free_memory}")
         print(f"Selecting GPU: {best_gpu} with {free_memory[best_gpu]}MB free memory.")
@@ -604,83 +570,7 @@ def get_free_gpu():
         print(f"Error while querying GPUs: {e}")
         return None
 
-def plot_tsne(features, labels, class_names, save_path, title):
-    """
-    使用 t-SNE 对特征降维并可视化。
 
-    参数：
-    - features: numpy array, shape [N, D]
-    - labels: array-like, shape [N]
-    - class_names: 类别名称（list），与标签一一对应
-    - save_path: 保存图片路径
-    - title: 图标题
-    """
-    # 设置字体
-    plt.rcParams["font.family"] = "Times New Roman"
-
-
-    # 执行 t-SNE
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)
-    reduced = tsne.fit_transform(features)
-
-    # 转成 numpy array
-    labels = np.array(labels)
-
-    # 类别颜色
-    colors = ['#1f77b4',  # 蓝色（清晰、信任）
-              '#ff7f0e',  # 橙色（醒目但不刺眼）
-              '#2ca02c',  # 绿色（冷静、中性）
-              '#d62728',  # 红色（表达负面情绪如愤怒）
-              '#9467bd',  # 紫色（代表快乐、复杂性）
-              '#8c564b',  # 棕紫（忧郁、沮丧感）
-              '#17becf'  # 青色（理性、科技感、也适合中性或“惊讶”等类）
-              ]
-    # 绘图
-    plt.figure(figsize=(7, 5))
-    for i, class_name in enumerate(class_names):
-        idx = (labels == i)
-        plt.scatter(reduced[idx, 0], reduced[idx, 1], s=10, c=colors[i], label=class_name)
-
-    plt.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=10)
-    # plt.title(title, fontsize=14, fontname="Times New Roman")
-    plt.xticks([])
-    plt.yticks([])
-    plt.tight_layout()
-    # plt.show()
-    plt.savefig(save_path, dpi=300)
-    plt.close()
-
-def plot_confusion_matrix(cm, class_names, save_path, title):
-
-    plt.style.use('default')  # 或 'seaborn', 'ggplot' 等任意其他风格
-
-    # 类别标签顺序（和混淆矩阵轴一致）
-    emotion_labels = class_names
-
-    # 开始绘图
-    # 设置字体为 Times New Roman
-    plt.rcParams["font.family"] = "Times New Roman"
-
-
-    plt.figure(figsize=(8, 6))
-
-
-    sns.set(font_scale=1.2)
-
-
-    # 设置vmin为非零最小值，更好突出非对角线的色块
-    nonzero_min = cm[cm > 0].min()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=emotion_labels, yticklabels=emotion_labels,
-                vmin=nonzero_min, vmax=cm.max(), cbar=False, square=True)  # 保证小值也显示颜色
-    # 设置标题和标签
-    # plt.title(title, fontsize=14)
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
-    plt.tight_layout()
-
-    plt.savefig(save_path, dpi=300)
-    plt.close()
 
 if __name__ == '__main__':
 
@@ -928,15 +818,12 @@ if __name__ == '__main__':
 
         print('Running on GPU')
 
-        # 获取最空闲的 GPU
         best_gpu = get_free_gpu()
-        # 设置 PyTorch 的 GPU 设备
         if best_gpu is not None and torch.cuda.is_available():
             device = torch.device(f"cuda:{best_gpu}")
-            torch.cuda.set_device(device)  # 设置当前默认 GPU
+            torch.cuda.set_device(device)  
             class_weights = class_weights.cuda()
             model.cuda()
-        # 打印选择的设备
         print(f"Using device: {device}")
     else:
         print('Running on CPU')
@@ -1099,7 +986,6 @@ if __name__ == '__main__':
         print(all_acc)
 
 
-        # 计算混淆矩阵
         cm_erc = metrics.confusion_matrix(test_label, test_pred)
         all_erc_confusion_matrices.append(cm_erc)
 
@@ -1110,9 +996,7 @@ if __name__ == '__main__':
         all_es_context_confusion_matrices.append(cm_es_context)
 
 
-        # 保存特征值
         all_erc_test_feature.append(hiddens)
-        # 保存预测标签、真实标签
         all_erc_test_pred.append(test_pred)
 
         all_erc_test_label.append(test_label)
@@ -1134,64 +1018,7 @@ if __name__ == '__main__':
 
     print('------best_test_fscore:\n', max(all_test_fscore))
     print('------best_test_acc:\n', max(all_test_acc))
-'''
 
-    if best_epoch >= 0:
-        cm_erc = all_erc_confusion_matrices[best_epoch]
-        print('All_confusion_matrice:\n', all_erc_confusion_matrices[best_epoch] if best_epoch >= 0 else 0)
-
-        now = datetime.datetime.now()
-        formatted_now = now.strftime("%m-%d_%H-%M")
-        # 绘制混淆矩阵
-        path1 = f"../checkpoints/{args.dataset}_epoch{best_epoch}_confusion_matrices_visual_{formatted_now}.png"
-        title1 = f"ERC Confusion Matrices on {args.dataset}"
-        plot_confusion_matrix(cm_erc, target_names, path1, title1)
-
-        # path11 = f"../checkpoints/{args.dataset}_epoch{best_epoch}_confusion_matrices_ES_person_visual_{formatted_now}.png"
-        # title11 = f"ES person Confusion Matrices on {args.dataset}"
-        # plot_confusion_matrix(all_es_person_confusion_matrices[best_epoch], target_names, path11, title11)
-        #
-        # path111 = f"../checkpoints/{args.dataset}_epoch{best_epoch}_confusion_matrices_ES_context_visual_{formatted_now}.png"
-        # title111 = f"ES context Confusion Matrices on {args.dataset}"
-        # plot_confusion_matrix(all_es_context_confusion_matrices[best_epoch], target_names, path111, title111)
-
-        # 绘制T-SNE
-        path2 = f"../checkpoints/{args.dataset}_epoch{best_epoch}_tsne_{formatted_now}.png"
-        title2 = f"T-NSE on {args.dataset}"
-        plot_tsne(all_erc_test_feature[best_epoch], all_erc_test_label[best_epoch], target_names, path2, title2)
-
-        # 保存结果到txt
-
-        path3 = f"../checkpoints/{args.dataset}_epoch{best_epoch}_result_{formatted_now}.txt"
-
-        with open(path3, "w") as f:
-            np.set_printoptions(threshold=np.inf)  # 显示全部内容，不省略
-            print('--------------- wo_ercByShiftEdges ------------------', file=f)
-            print('Early stoping...', patience, patience2, file=f)
-
-            print('Eval-metric: F1, Epoch: {}, best_eval_fscore: {}, Accuracy: {}, F1-Score: {}'.format(best_epoch,
-                                                                                                        best_eval_fscore,
-                                                                                                        all_test_acc[best_epoch] if best_epoch >= 0 else 0,
-                                                                                                        all_test_fscore[best_epoch] if best_epoch >= 0 else 0), file=f)
-            print('All-each:\n', all_all_each[best_epoch] if best_epoch >= 0 else 0, file=f)
-
-            print('------best_test_fscore:\n', max(all_test_fscore), file=f)
-            print('------best_test_acc:\n', max(all_test_acc), file=f)
-
-            print('erc_confusion_matrice_parameters:\n{}\n{}\n{}\n'.format(cm_erc, target_names, title1), file=f)
-
-            print('plot_tsne_parameters:\n{}\n{}\n{}\n{}'.format(all_erc_test_feature[best_epoch], all_erc_test_label[best_epoch], target_names, title2), file=f)
-
-
-
-            print('es_person_confusion_matrice_parameters:\n', all_es_person_confusion_matrices[best_epoch], file=f)
-
-            print('es_context_confusion_matrice_parameters:\n',all_es_context_confusion_matrices[best_epoch], file=f)
-
-
-            print('all_erc_test_pred[best_epoch]:\n', all_erc_test_pred[best_epoch], file=f)
-
-'''
 
 
 
