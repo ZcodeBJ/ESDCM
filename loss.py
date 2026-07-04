@@ -634,21 +634,21 @@ def MM(optimizer, losses, train_flag, device, model):
 
         optimizer.zero_grad()
 
-    # 1. 提取 record_names_shift2 和 record_names_erc2 中的参数名称
+   
     shift_tensor_names = {tensor_name for tensor_name, _ in record_names_shift2}
     erc_tensor_names = {tensor_name for tensor_name, _ in record_names_erc2}
 
-    # 2. 找到重叠的参数名称
+
     overlap_tensor_names = shift_tensor_names.intersection(erc_tensor_names)
 
-    # 3. 过滤 grads_shift 中的非重叠项
+ 
     for loss_type in grads:
-        # 保留重叠项
+   
         grads_new[loss_type] = {tensor_name: grad for tensor_name, grad in grads[loss_type].items() if
                                   tensor_name in overlap_tensor_names}
 
 
-    # 4. 拼接重叠项的梯度
+   
     for loss_type in grads:
         grads_new[loss_type]["concat"] = torch.cat(
             [grads[loss_type][tensor_name].flatten() for tensor_name in overlap_tensor_names]
