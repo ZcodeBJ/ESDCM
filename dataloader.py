@@ -20,32 +20,23 @@ class IEMOCAPDataset(Dataset):
         _, _, self.roberta1, self.roberta2, self.roberta3, self.roberta4,\
         _, _, _, _ = pickle.load(open('../data/iemocap/iemocap_features_roberta.pkl', 'rb'), encoding='latin1')
         
-        ############################
+       
         # prepare persona data
         self.persona = pickle.load(open("../data/personaERC/IEMOCAP_persona.pkl", 'rb'), encoding='latin1')
-        ############################
-
-        ## construct speaker infomation
-        # 存储每个视频ID对应的说话者信息
+       
         self.speakers = {}
-        # 一个正则表达式，用于匹配视频ID字符串中的会话编号（SesXX）和说话者编号
-        # r'(Ses\d{2})'：匹配以 Ses 开头，后跟两个数字的会话信息（如 Ses01、Ses02）
-        # ([MF]\d{3})：匹配说话者的性别和编号，M 或 F 开头，后跟三位数字（如 M001 或 F002）
+       
         self.pattern = re.compile(r'(Ses\d{2}).*?([MF]\d{3})')
         print("len(self.videoIDs.keys())",len(self.videoIDs.keys()))
         for vid in self.videoIDs.keys():
-            # 初始化当前视频ID对应的说话者信息列表
+           
             self.speakers[vid] = []
             for item in self.videoIDs[vid]:
-                # 通过正则表达式提取视频ID中的会话编号和性别。如果匹配成功，正则表达式会返回一个 Match 对象，包含会话编号和说话者编号
+               
                 matches = self.pattern.search(item)
                 if matches:
-                    # 将匹配到的会话和性别信息存储到 temp 元组中
                     temp = matches.groups()
-                    # 提取会话编号部分
                     session = temp[0].replace("Ses", "")
-                    # 偶数为male, 奇数为female
-                    # 通过检查第二部分的说话者ID是否包含 M（表示男性），将男性编码为 0，女性编码为 1
                     gender = 0 if 'M' in temp[1] else 1
 
                     self.speakers[vid].append((int(session)-1)*2 + gender)
@@ -123,7 +114,6 @@ class MELDDataset(Dataset):
             self.originData[(value['Dialogue_ID'])].append(value)
             
         self.speakers = []
-        # 存储所有的speaker的信息，具体到每一个人
         self.speaker_list = {}
         for index in self.originData.keys():
             value = self.originData[index]
@@ -230,28 +220,26 @@ class MELDDataset(Dataset):
 
 class M3EDDataset(Dataset):
     def __init__(self, path=None, train=True, use_multiemo=False):
-        # 加载pkl文件
         # print("path=",path)
         loaded_data  = pickle.load(open('/home/wwl/MY/PCGNetz copy/data/M3ED_features/m3ed_features.pkl', 'rb'), encoding='latin1')
         # print(len(data_list))
         if isinstance(loaded_data, tuple) and len(loaded_data) == 2: # 如果 loaded_data 是长度为 2 的元组，则取第一个元素
-            data_list = loaded_data[0]  # 解包嵌套结构
+            data_list = loaded_data[0]  
         else:
-            data_list = loaded_data  # 否则直接使用 loaded_data
+            data_list = loaded_data  
         assert len(data_list) >= 10, f"数据字段不足10个，实际长度: {len(data_list)}"
         # print('data_list的长度为=',len(data_list))
 
-        # 解析数据集结构
-        self.videoIDs = data_list[0]     # 完整语句ID
-        self.videoSpeakers = data_list[1]     # 说话人信息，原生的：['A', 'B', 'B', 'A', ...]
-        self.videoLabels = data_list[2]        # 情感标签
-        self.videoText = data_list[3]          # 文本特征 (Roberta)
-        self.videoAudio = data_list[4]         # 音频特征 (Wav2Vec2.0)
-        self.videoVisual = data_list[5]        # 视觉特征 (DenseNet)
-        self.videoSentence = data_list[6]      # 原始文本语句
-        self.trainVid = data_list[7]           # 训练集对话ID列表
-        self.validVid = data_list[8]           # 验证集对话ID列表
-        self.testVid = data_list[9]            # 测试集对话ID列表
+        self.videoIDs = data_list[0]     
+        self.videoSpeakers = data_list[1]     
+        self.videoLabels = data_list[2]        
+        self.videoText = data_list[3]          
+        self.videoAudio = data_list[4]         
+        self.videoVisual = data_list[5]        
+        self.videoSentence = data_list[6]      
+        self.trainVid = data_list[7]           
+        self.validVid = data_list[8]           
+        self.testVid = data_list[9]            
 
         self.keys = [x for x in (self.trainVid if train else self.testVid)]
         self.len = len(self.keys)
@@ -261,25 +249,19 @@ class M3EDDataset(Dataset):
         ############################
 
         ## construct speaker infomation
-        # 存储每个视频ID对应的说话者信息
         self.speakers = {}
-        # 一个正则表达式，用于匹配视频ID字符串中的会话编号（SesXX）和说话者编号
-        # r'(Ses\d{2})'：匹配以 Ses 开头，后跟两个数字的会话信息（如 Ses01、Ses02）
-        # ([MF]\d{3})：匹配说话者的性别和编号，M 或 F 开头，后跟三位数字（如 M001 或 F002）
         for vid in self.videoIDs.keys():
             self.speakers[vid] = []
             for item in self.videoIDs[vid]:
-                # 新正则：匹配 "A_fendou_1 .3" 中的 "fendou" 和性别标记（A/B 或其他）
-                matches = re.search(r"^([A-Z])_(\w+)_(\d+)", item.strip())  # 移除可能的空格
+               
+                matches = re.search(r"^([A-Z])_(\w+)_(\d+)", item.strip())  
                 if matches:
-                    gender_flag = matches.group(1)  # 提取首字母（如 'A'）
-                    speaker_id = matches.group(2)   # 提取中间部分（如 'fendou'）
-                    session_num = matches.group(3)  # 提取数字（如 '1'）
+                    gender_flag = matches.group(1)  
+                    speaker_id = matches.group(2)   
+                    session_num = matches.group(3)  
                     
-                    # 性别编码规则（根据你的需求自定义，例如 A=男性，B=女性）
                     gender = 0 if gender_flag == 'A' else 1
                     
-                    # 生成唯一说话者标识（保持原逻辑：会话编号*2 + 性别偏移）
                     self.speakers[vid].append((int(session_num)-1)*2 + gender)
 
         if use_multiemo:
@@ -295,8 +277,6 @@ class M3EDDataset(Dataset):
 
 
 
-    # videoSpeakers[vid] 被转换为 one-hot 编码: 'M' → [1, 0], 'F' → [0, 1]
-    # speakers[vid]: 每个话语的说话者 ID, 从 videoIDs 解析并计算, 计算后的会话+性别编码（整数）
     def __getitem__(self, index):
         vid = self.keys[index]
         return torch.FloatTensor(self.videoText[vid]),\
