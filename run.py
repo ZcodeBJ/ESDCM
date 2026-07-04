@@ -35,45 +35,32 @@ def decodeShiftLabel(shift_label, dataset):
 
 
 def shiftContrastLearningShiftTask(shift_features, shift_labels, sample_num=50, dataset='IEMOCAP'):
-    # 确定采样数量
     shift_nums = shift_features.shape[0]
     sample_num = sample_num if shift_nums > sample_num else shift_nums
-    # 随机采样
     sample_index = torch.tensor(random.sample(list(range(shift_nums)), sample_num)).detach()
     sample_index = sample_index.to(shift_features.device)
-    # 获取采样后的特征和标签
     shift_features_sampled = shift_features[sample_index]
     shift_labels_sampled = shift_labels[sample_index]
 
     ### TODO : improve sample stragy
-    # 生成所有可能的样本对索引
     shift_features_pair_index = list(itertools.permutations(list(range(sample_num)), 2))
 
     shift_features_pair = []
     shift_features_pair_label = []
-    # 构建样本对
     for index in shift_features_pair_index:
         index = list(index)
-        # 使用采样后的特征 shift_features_sampled 构造样本对的特征。每对特征由两个样本组成，通过 view(-1) 将其展平成一维向量（连接两个样本的特征）
         shift_features_pair.append(shift_features_sampled[index,:].view(-1))
-        # 解码标签
         pair1_front, pair1_back = decodeShiftLabel(int(shift_labels_sampled[index[0]]), dataset=dataset)
         pair2_front, pair2_back = decodeShiftLabel(int(shift_labels_sampled[index[1]]), dataset=dataset)
-        # 基于标签相似性生成标签对
-        ## 标签相反
         if pair1_front == pair2_back and pair1_back == pair2_front:
             shift_features_pair_label.append(4)
         else:
-            ## 标签相同
             if pair1_front == pair2_front and pair1_back == pair2_back:
                 shift_features_pair_label.append(0)
-            ## 头相同
             elif pair1_front == pair2_front and pair1_back != pair2_back:
                 shift_features_pair_label.append(1)
-            ## 尾相同
             elif pair1_front != pair2_front and pair1_back == pair2_back:
                 shift_features_pair_label.append(2)
-            ## 不相同
             elif pair1_front != pair2_front and pair1_back != pair2_back:
                 shift_features_pair_label.append(3)
     return torch.stack(shift_features_pair), torch.tensor(shift_features_pair_label).to(shift_features.device)
@@ -108,7 +95,6 @@ def get_hard_negative_weights(emotion_features, hard_negatives, weight=1):
     N = len(hard_negatives)
     value = 1
     hard_negative_weights = torch.full((N, N), value)
-    # 填充权重矩阵
     for item in hard_negatives:
         sentence_idx = item['sentence_index']
         for neg_idx in item['hard_negative_indices']:
@@ -225,37 +211,27 @@ def metricsShiftEmotion(labels, preds, speakers, dataset):
 
 
 def constructShiftLabel(qmask, lengths, label, class_num):
-    # 保存每个对话中连续句子的组合标签
     person_shift_label = []
     qmask = torch.cat([qmask[:lengths[i], i ,:] for i in range(len(lengths))], dim=0)
     uttr_count = 0
     for dia_len in lengths:
-        # 提取说话者索引
         dia_speaker = sorted(set(torch.nonzero(qmask[uttr_count: uttr_count + dia_len])[:, 1].tolist()))
         for speaker in dia_speaker:
-            # 对每个说话者，找到当前对话中属于该说话者的句子索引
             speaker_index = torch.nonzero(qmask[uttr_count: uttr_count + dia_len])[:, 1] == speaker
-            # 标签张量 label 中提取出当前说话者的句子标签
             current_speaker_label = label[uttr_count: uttr_count + dia_len][speaker_index.bool()]
-            # 构建连续句子的标签组合
             if current_speaker_label.shape[0] > 1:
-                # 遍历连续的标签对，将当前句子的标签和下一个句子的标签组合成一个新的标签
                 for i in range(current_speaker_label.shape[0] - 1):
                     person_shift_label.append(current_speaker_label[i] * class_num + current_speaker_label[i + 1])
         uttr_count = uttr_count + dia_len
 
-    # 不区分说话者的情绪标签转移
     context_shift_label = []
     uttr_count = 0
     for dia_len in lengths:
-        # 获取当前对话的所有句子标签（上下文标签）
         current_label = label[uttr_count: uttr_count + dia_len]
-        # 构造上下文情绪转移：拼接相邻句子的特征
 
         if current_label.shape[0] > 1:
             for i in range(current_label.shape[0] - 1):
                 context_shift_label.append(current_label[i] * class_num + current_label[i + 1])
-        # 更新 `uttr_count`，指向下一个对话的起始位置
         uttr_count = uttr_count + dia_len
 
     return torch.tensor(person_shift_label).to(qmask.device), torch.tensor(context_shift_label).to(qmask.device)
@@ -370,11 +346,8 @@ def train_or_eval_graph_model(model, loss_f, dataloader, epoch=0, stage=1, wo_er
             persona_info = torch.cat([persona_job, persona_sex, persona_personality, torch.mean(torch.cat([persona_job.unsqueeze(0), persona_sex.unsqueeze(0), persona_personality.unsqueeze(0)], dim=0), dim=0)], dim=-1).to(textf1.device)
             
         speaker_all.extend(speaker)
-        # 每段对话中有效句子的数量
         lengths = [int(torch.sum(umask[:,i])) for i in range(umask.shape[1])]
-        # 将 label 中每段对话的有效标签提取出来，并通过 torch.cat 将所有有效标签拼接成一个张量
         label = torch.cat([label[j][:lengths[j]] for j in range(len(label))])
-        # 将相邻的两个句子标签组合成一个新标签，并存储在 shift_label 中
         person_label_shift, context_label_shift = constructShiftLabel(qmask, lengths, label, 6 if args.dataset=='IEMOCAP' else 7)
         # front_label, black_label = decodeShiftLabel(label_shift.tolist(),'IEMOCAP')
 
@@ -384,7 +357,6 @@ def train_or_eval_graph_model(model, loss_f, dataloader, epoch=0, stage=1, wo_er
             lengths, acouf, visuf, speaker=speaker,
             persona=persona, stage=stage, wo_ercByShiftEdges=wo_ercByShiftEdges)
 
-        # 如果第一阶段，则不计算erc损失
         if stage == 1:
             loss_erc = 0
         else:
@@ -510,14 +482,11 @@ def get_free_gpu():
     使用 nvidia-smi 获取 GPU 显存占用信息，返回空闲显存最多的 GPU 索引
     """
     try:
-        # 调用 nvidia-smi 命令并获取输出
         result = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
             encoding="utf-8"
         )
-        # 解析输出，获取每张 GPU 的空闲显存
         free_memory = [int(x) for x in result.strip().split("\n")]
-        # 找到空闲显存最大的 GPU 的索引
         best_gpu = free_memory.index(max(free_memory))
         print(f"Available GPUs free memory: {free_memory}")
         print(f"Selecting GPU: {best_gpu} with {free_memory[best_gpu]}MB free memory.")
